@@ -12,6 +12,13 @@
 <!-- Follow Up Boss embedded-app bridge: required for the iframe to
      communicate with FUB (sizing, navigation). -->
 <script type="text/javascript" src="https://eia.followupboss.com/embeddedApps-v1.0.1.js"></script>
+<script>
+/* FUB sizes the iframe from the height the bridge reports, so viewport
+   units are circular inside the frame (100vh of an iframe whose height
+   we define → collapses to nothing). Flag framed mode before first
+   paint and let the embedded stylesheet flow the page naturally. */
+if(window.self!==window.top)document.documentElement.classList.add('embedded');
+</script>
 <style>
 /* ==================================================================
    ReferIQ — Follow Up Boss embedded app
@@ -50,6 +57,12 @@ a{color:var(--royal);text-decoration:none}
 
 /* ---------------- shell ---------------- */
 .app{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;max-width:410px;margin:0 auto;background:var(--canvas)}
+/* Framed inside FUB: the iframe grows to fit the content the bridge
+   reports, so the page must flow at its natural height — no viewport
+   sizing, no internal scroll region. */
+html.embedded,html.embedded body{height:auto}
+html.embedded .app{height:auto;min-height:540px;overflow:visible}
+html.embedded .body{flex:none;overflow:visible}
 .top{flex:0 0 auto;background:var(--ink);color:#fff;padding:12px 14px 11px;
   display:flex;align-items:center;gap:10px}
 .top .wm{height:26px;width:auto;display:block;flex:0 0 auto}
@@ -501,6 +514,14 @@ function personFromContext(p){
 }
 const DEMO_PERSON={id:'demo-1',name:'Alicia Moreno',email:'alicia.moreno@example.com',
   phone:'(407) 555-0186',zip:'34787',city:'Winter Garden',state:'FL',stage:'Lead'};
+
+/* FUB's bridge script reports our height only when a DOM mutation or UI
+   event fires, and it can't post anything until FUB has pinged it once.
+   A quiet page after load means no HEIGHT report and a collapsed iframe,
+   so when framed, nudge the bridge on a steady beat. */
+if(window.self!==window.top){
+  setInterval(()=>window.dispatchEvent(new Event('resize')),800);
+}
 
 let FUB={account:null,user:null,person:null,verified:false};
 (function initContext(){

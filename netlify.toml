@@ -21,9 +21,9 @@
 [[headers]]
   for = "/fub/*"
   [headers.values]
-    Content-Security-Policy = "frame-ancestors 'self' https://*.followupboss.com"
+    Content-Security-Policy = "frame-ancestors 'self' https://followupboss.com https://*.followupboss.com"
 
 [[headers]]
   for = "/fub"
   [headers.values]
-    Content-Security-Policy = "frame-ancestors 'self' https://*.followupboss.com"
+    Content-Security-Policy = "frame-ancestors 'self' https://followupboss.com https://*.followupboss.com"
