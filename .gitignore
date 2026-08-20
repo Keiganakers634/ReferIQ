@@ -1,0 +1,9 @@
+# Netlify CLI local state
+.netlify/
+
+# Local Claude Code tooling
+.claude/
+
+node_modules/
+.env
+.env.*

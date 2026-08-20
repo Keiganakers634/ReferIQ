@@ -1,0 +1,29 @@
+# ReferIQ — Netlify configuration
+#
+#   public/            → static site (publish dir)
+#     index.html       → marketing / coming-soon page at /
+#     fub/index.html   → Follow Up Boss embedded app at /fub/
+#   netlify/functions/ → backend for the FUB app (context verify, blasts)
+
+[build]
+  publish = "public"
+
+# The marketing page must never be framed.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Content-Security-Policy = "frame-ancestors 'none'"
+
+# The FUB app runs inside an iframe on followupboss.com, so it must
+# explicitly allow those frame ancestors (this overrides the /* rule).
+[[headers]]
+  for = "/fub/*"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors 'self' https://*.followupboss.com"
+
+[[headers]]
+  for = "/fub"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors 'self' https://*.followupboss.com"

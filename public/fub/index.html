@@ -9,6 +9,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Follow Up Boss embedded-app bridge: required for the iframe to
+     communicate with FUB (sizing, navigation). -->
+<script type="text/javascript" src="https://eia.followupboss.com/embeddedApps-v1.0.1.js"></script>
 <style>
 /* ==================================================================
    ReferIQ — Follow Up Boss embedded app
@@ -447,14 +450,21 @@ const validEmail=v=>/^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(String(v||'').trim());
 const tstr=t=>new Date(t).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
 const REFERRAL_FEE=25;
 
+/* Same-origin Netlify functions (netlify/functions/ in this repo).
+   Change only if the backend ever moves off this site. */
+const API_BASE='/api';
+
 /* ==================================================================
    FOLLOW UP BOSS CONTEXT
-   FUB frames this page and appends a signed JWT as ?context=<jwt>.
+   FUB frames this page as ?context=<base64url JSON>&signature=<hmac>.
+   The signature is HMAC-SHA256 (hex) over the raw base64 context
+   string, keyed with the embedded app's secret.
 
-   SECURITY: this decodes the payload only. It does NOT verify the
-   signature and cannot — that needs your app secret, which must never
-   reach the browser. Post the raw token to your server, verify HS256
-   there, and hand back a trusted context plus a session token.
+   SECURITY: this decodes the payload only, for an optimistic first
+   paint. Verification needs the app secret, which must never reach the
+   browser — both params are posted to /api/fub/verify, which checks
+   the HMAC server-side and hands back a trusted context plus a
+   session token.
    ================================================================== */
 function b64urlDecode(s){
   s=s.replace(/-/g,'+').replace(/_/g,'/');
@@ -462,19 +472,20 @@ function b64urlDecode(s){
   try{ return decodeURIComponent(escape(atob(s))); }catch(e){ return null; }
 }
 function readContext(){
-  const raw=new URLSearchParams(location.search).get('context');
-  if(!raw) return {mode:'demo',raw:null,payload:null};
-  const parts=raw.split('.');
-  if(parts.length!==3) return {mode:'invalid',raw,payload:null};
+  const q=new URLSearchParams(location.search);
+  const raw=q.get('context'), sig=q.get('signature');
+  if(!raw) return {mode:'demo',raw:null,sig:null,payload:null};
+  /* base64 JSON blob normally; tolerate a JWT (three dot parts) too */
+  const b64=raw.split('.').length===3?raw.split('.')[1]:raw;
   let payload=null;
-  try{ payload=JSON.parse(b64urlDecode(parts[1])); }catch(e){}
-  return payload?{mode:'unverified',raw,payload}:{mode:'invalid',raw,payload:null};
+  try{ payload=JSON.parse(b64urlDecode(b64)); }catch(e){}
+  return payload?{mode:'unverified',raw,sig,payload}:{mode:'invalid',raw,sig,payload:null};
 }
-async function verifyContextWithBackend(raw){
-  /* const r=await fetch(API_BASE+'/fub/verify',{method:'POST',
-       headers:{'Content-Type':'application/json'},body:JSON.stringify({context:raw})});
-     return r.ok?r.json():null;   // { account, user, person, session } */
-  return null;
+async function verifyContextWithBackend(raw,sig){
+  const r=await fetch(API_BASE+'/fub/verify',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({context:raw,signature:sig})});
+  return r.ok?r.json():null;   // { account, user, person, session }
 }
 const CTX=readContext();
 
@@ -485,7 +496,8 @@ function personFromContext(p){
     email:(emails[0]&&(emails[0].value||emails[0].email))||p.email||'',
     phone:(phones[0]&&(phones[0].value||phones[0].phone))||p.phone||'',
     zip:addr.code||addr.zip||addr.postalCode||'',
-    city:addr.city||'',state:addr.state||'',stage:p.stage||''};
+    city:addr.city||'',state:addr.state||'',
+    stage:(p.stage&&p.stage.name)||(typeof p.stage==='string'?p.stage:'')};
 }
 const DEMO_PERSON={id:'demo-1',name:'Alicia Moreno',email:'alicia.moreno@example.com',
   phone:'(407) 555-0186',zip:'34787',city:'Winter Garden',state:'FL',stage:'Lead'};
@@ -501,7 +513,7 @@ let FUB={account:null,user:null,person:null,verified:false};
     FUB.account=p.account||null; FUB.user=p.user||null;
     FUB.person=personFromContext(p.person)||DEMO_PERSON;
     c.classList.add('warn'); t.textContent='Unverified context';
-    verifyContextWithBackend(CTX.raw).then(v=>{
+    verifyContextWithBackend(CTX.raw,CTX.sig).then(v=>{
       if(!v) return;
       FUB={...FUB,...v,verified:true};
       c.classList.remove('warn'); t.textContent='Connected';
@@ -513,11 +525,14 @@ let FUB={account:null,user:null,person:null,verified:false};
    BACKEND CALLS
    ------------------------------------------------------------------
    All of these are server-side. Neither the Telnyx API key nor the FUB
-   API key can live in an iframe. See referiq-telnyx-setup.md for the
-   endpoint contracts and the Telnyx wiring behind each one.
+   API key can live in an iframe. The endpoints live in this repo as
+   Netlify functions — netlify/functions/fub-verify.mjs and blasts.mjs.
+
+   Demo mode: opening /fub/ directly (no FUB context in the URL) keeps
+   everything local and simulated. Framed inside FUB with a real signed
+   context, the app talks to the functions above.
    ================================================================== */
-const API_BASE='';                 /* e.g. 'https://api.referiq.com' */
-const DEMO=!API_BASE;
+const DEMO=CTX.mode!=='unverified';
 
 async function api(path,body){
   if(DEMO) throw new Error('demo');
